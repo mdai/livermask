@@ -1,5 +1,7 @@
 # Automatic liver segmentation in CT using deep learning
 
+[![View on MD.ai](https://mdai-assets.s3.amazonaws.com/logo/github_badge.svg)](https://public.md.ai/annotator/project/XQqbVvqr)
+
 #### NOTE: Trained 2D model on the LITS dataset is automatically downloaded when running the inference script and can be used as you wish, but please, give credit. ENJOY! :)
 
 
