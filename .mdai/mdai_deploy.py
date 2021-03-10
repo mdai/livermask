@@ -9,12 +9,15 @@ import nibabel as nib
 import dicom2nifti
 from scipy.ndimage import zoom
 from tensorflow.python.keras.models import load_model
-from nibabel.processing import resample_to_output, resample_from_to
 
-from skimage.morphology import remove_small_holes, binary_dilation, binary_erosion, ball
-from skimage.measure import label, regionprops, find_contours
 import warnings
+from skimage.morphology import remove_small_holes, binary_dilation, binary_erosion, ball
+from skimage.measure import label, regionprops
 from helper import intensity_normalization, sort_dicoms
+import dicom2nifti.settings as settings
+
+settings.disable_validate_orthogonal()
+settings.disable_validate_slice_increment()
 
 warnings.filterwarnings("ignore", ".*output shape of zoom.*")
 
@@ -115,14 +118,26 @@ class MDAIModel:
         # 2) keep only largest connected component
         labels = label(pred)
         regions = regionprops(labels)
-        area_sizes = []
-        for region in regions:
-            area_sizes.append([region.label, region.area])
-        area_sizes = np.array(area_sizes)
-        tmp = np.zeros_like(pred)
-        tmp[labels == area_sizes[np.argmax(area_sizes[:, 1]), 0]] = 1
-        pred = tmp.copy()
-        del tmp, labels, regions, area_sizes
+        if regions:
+            area_sizes = []
+            for region in regions:
+                area_sizes.append([region.label, region.area])
+            area_sizes = np.array(area_sizes)
+            tmp = np.zeros_like(pred)
+            tmp[labels == area_sizes[np.argmax(area_sizes[:, 1]), 0]] = 1
+            pred = tmp.copy()
+            del tmp, labels, regions, area_sizes
+        else:
+            for i in range(len(dicom_files)):
+                outputs.append(
+                    {
+                        "type": "NONE",
+                        "study_uid": str(dicom_files[i].StudyInstanceUID),
+                        "series_uid": str(dicom_files[i].SeriesInstanceUID),
+                        "instance_uid": str(dicom_files[i].SOPInstanceUID),
+                    }
+                )
+            return outputs
 
         # 3) dilate
         pred = binary_dilation(pred.astype(bool), ball(3))
@@ -135,20 +150,21 @@ class MDAIModel:
         print("saving...", flush=True)
         pred = pred.astype(np.uint8)
 
+        if len(pred.shape) != 3:
+            pred = np.expand_dims(pred, -1)
+
         for i, mask in enumerate(np.transpose(np.rot90(pred), (2, 0, 1))):
-            contours = find_contours(mask, 0)
-            if contours:
-                for contour in contours:
-                    data = {"vertices": [[(v[1]), (v[0])] for v in contour.tolist()]}
-                    output = {
+            if np.sum(mask) != 0:
+                outputs.append(
+                    {
                         "type": "ANNOTATION",
                         "study_uid": str(dicom_files[i].StudyInstanceUID),
                         "series_uid": str(dicom_files[i].SeriesInstanceUID),
                         "instance_uid": str(dicom_files[i].SOPInstanceUID),
                         "class_index": 0,
-                        "data": data,
+                        "data": {"mask": mask.tolist()},
                     }
-                    outputs.append(output)
+                )
             else:
                 outputs.append(
                     {
