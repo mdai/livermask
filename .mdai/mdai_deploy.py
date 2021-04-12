@@ -27,6 +27,15 @@ class MDAIModel:
         self.modelpath = os.path.join(os.path.dirname(__file__), "../model.h5")
         self.tempdir = tempfile.mkdtemp()
 
+    def default_output(self, ds):
+        output = {
+            "type": "NONE",
+            "study_uid": str(ds.StudyInstanceUID),
+            "series_uid": str(ds.SeriesInstanceUID),
+            "instance_uid": str(ds.SOPInstanceUID),
+        }
+        return output
+
     def predict(self, data):
         """
         See https://github.com/mdai/model-deploy/blob/master/mdai/server.py for details on the
@@ -40,8 +49,11 @@ class MDAIModel:
         for file in input_files:
             if file["content_type"] != "application/dicom":
                 continue
+            ds = pydicom.dcmread(BytesIO(file["content"]))
+            dicom_files.append(ds)
 
-            dicom_files.append(pydicom.dcmread(BytesIO(file["content"])))
+        if dicom_files[0].ImageOrientationPatient != [1, 0, 0, 0, 1, 0]:
+            return [self.default_output(i) for i in dicom_files]
 
         dicom_files = sort_dicoms(dicom_files)
 
@@ -61,7 +73,7 @@ class MDAIModel:
         # resampled_volume = resample_to_output(nib_volume, new_spacing, order=1)
         # data = resampled_volume.get_data().astype("float32")
 
-        data = nib_volume.get_fdata().astype("float32")
+        data = nib_volume.get_data().astype("float32")
         curr_shape = data.shape
 
         # resize to get (512, 512) output images
@@ -128,16 +140,7 @@ class MDAIModel:
             pred = tmp.copy()
             del tmp, labels, regions, area_sizes
         else:
-            for i in range(len(dicom_files)):
-                outputs.append(
-                    {
-                        "type": "NONE",
-                        "study_uid": str(dicom_files[i].StudyInstanceUID),
-                        "series_uid": str(dicom_files[i].SeriesInstanceUID),
-                        "instance_uid": str(dicom_files[i].SOPInstanceUID),
-                    }
-                )
-            return outputs
+            return [self.default_output(i) for i in dicom_files]
 
         # 3) dilate
         pred = binary_dilation(pred.astype(bool), ball(3))
@@ -166,14 +169,7 @@ class MDAIModel:
                     }
                 )
             else:
-                outputs.append(
-                    {
-                        "type": "NONE",
-                        "study_uid": str(dicom_files[i].StudyInstanceUID),
-                        "series_uid": str(dicom_files[i].SeriesInstanceUID),
-                        "instance_uid": str(dicom_files[i].SOPInstanceUID),
-                    }
-                )
+                outputs.append(self.default_output(dicom_files[i]))
 
         os.remove(
             os.path.join(self.tempdir, dicom_files[0].SeriesInstanceUID + ".nii.gz")
