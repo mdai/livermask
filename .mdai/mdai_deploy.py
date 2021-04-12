@@ -52,7 +52,10 @@ class MDAIModel:
             ds = pydicom.dcmread(BytesIO(file["content"]))
             dicom_files.append(ds)
 
-        if dicom_files[0].ImageOrientationPatient != [1, 0, 0, 0, 1, 0]:
+        if (
+            dicom_files[0].ImageOrientationPatient != [1, 0, 0, 0, 1, 0]
+            or len(dicom_files) <= 5
+        ):
             return [self.default_output(i) for i in dicom_files]
 
         dicom_files = sort_dicoms(dicom_files)
